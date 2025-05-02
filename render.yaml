@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: lts-queue-notifier
+    env: node
+    buildCommand: npm install
+    startCommand: node app.js
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production 

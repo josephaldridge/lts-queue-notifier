@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zendesk Queue Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-card {
+            transition: all 0.3s ease;
+        }
+        .status-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .alert {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        .view-card {
+            margin-bottom: 1rem;
+        }
+        #scanButton {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        #scanButton:hover {
+            background-color: #0b5ed7;
+        }
+        .scanning {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <h1 class="text-center mb-4">Zendesk Queue Monitor</h1>
+        
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div class="card status-card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Current Status</h5>
+                        <p class="text-muted">Last checked: <span id="lastChecked"><%= lastChecked %></span></p>
+                        
+                        <div id="viewResults">
+                            <% if (viewResults) { %>
+                                <% viewResults.forEach(view => { %>
+                                    <div class="card view-card">
+                                        <div class="card-body">
+                                            <h6 class="card-subtitle mb-2 text-muted">View: <%= view.viewName %></h6>
+                                            
+                                            <div class="mb-3">
+                                                <h6>Ticket Count: 
+                                                    <span class="badge <%= view.ticketCount >= 5 ? 'bg-danger' : 'bg-success' %>">
+                                                        <%= view.ticketCount %>
+                                                    </span>
+                                                </h6>
+                                                <% if (view.ticketCount >= 5) { %>
+                                                    <div class="alert alert-danger">
+                                                        High ticket volume detected! Email notification sent.
+                                                    </div>
+                                                <% } %>
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <h6>Office Down Status: 
+                                                    <span class="badge <%= view.hasOfficeDown ? 'bg-danger' : 'bg-success' %>">
+                                                        <%= view.hasOfficeDown ? 'Detected' : 'None' %>
+                                                    </span>
+                                                </h6>
+                                                <% if (view.hasOfficeDown) { %>
+                                                    <div class="alert alert-danger">
+                                                        <p>Office down ticket(s) detected! Email notification sent.</p>
+                                                        <ul class="mb-0">
+                                                            <% view.officeDownTickets.forEach(ticket => { %>
+                                                                <li>
+                                                                    <a href="https://<%= process.env.ZENDESK_SUBDOMAIN %>.zendesk.com/agent/tickets/<%= ticket.id %>" target="_blank">
+                                                                        #<%= ticket.id %> - <%= ticket.subject %>
+                                                                    </a>
+                                                                </li>
+                                                            <% }); %>
+                                                        </ul>
+                                                    </div>
+                                                <% } %>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <% }); %>
+                            <% } else { %>
+                                <div class="alert alert-warning">
+                                    Unable to fetch view status. Please check your configuration.
+                                </div>
+                            <% } %>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">About</h5>
+                        <p class="card-text">
+                            This monitor checks your specified Zendesk views every 5 minutes and sends email notifications when:
+                        </p>
+                        <ul>
+                            <li>A view has 5 or more tickets</li>
+                            <li>A ticket with "Is Your Office Down?" field checked is detected in any view</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button id="scanButton" title="Scan Now">
+        <i class="fas fa-sync-alt"></i>
+    </button>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const scanButton = document.getElementById('scanButton');
+        const lastChecked = document.getElementById('lastChecked');
+        const viewResults = document.getElementById('viewResults');
+
+        async function scanNow() {
+            try {
+                scanButton.classList.add('scanning');
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    lastChecked.textContent = new Date(data.lastChecked).toLocaleString();
+                    // Refresh the page to show updated results
+                    window.location.reload();
+                } else {
+                    alert('Error scanning views: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error scanning views: ' + error.message);
+            } finally {
+                scanButton.classList.remove('scanning');
+            }
+        }
+
+        scanButton.addEventListener('click', scanNow);
+
+        // Auto-refresh the page every minute
+        setTimeout(() => {
+            window.location.reload();
+        }, 60000);
+    </script>
+</body>
+</html> 
