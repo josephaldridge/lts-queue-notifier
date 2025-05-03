@@ -167,7 +167,7 @@ cron.schedule('*/5 14-23 * * *', async () => {
     if (!viewResults) return;
 
     for (const view of viewResults) {
-        if (view.ticketCount >= 5) {
+        if (view.ticketCount >= 35) {
             await sendNotification(
                 `Zendesk Queue Alert: High Ticket Volume in ${view.viewName}`,
                 `Alert: The view "${view.viewName}" currently has ${view.ticketCount} tickets.`
@@ -203,7 +203,7 @@ app.post('/scan', async (req, res) => {
         
         // Check conditions and send notifications if needed
         for (const view of viewResults) {
-            if (view.ticketCount >= 5) {
+            if (view.ticketCount >= 35) {
                 const emailSent = await sendNotification(
                     `Zendesk Queue Alert: High Ticket Volume in ${view.viewName}`,
                     `Alert: The view "${view.viewName}" currently has ${view.ticketCount} tickets.`
