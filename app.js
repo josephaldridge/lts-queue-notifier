@@ -182,10 +182,15 @@ async function sendNotification(subject, message) {
             response: emailInfo.response
         });
 
-        // Send Telegram notification
+        // Send Telegram notification with markdown formatting
         console.log('Preparing to send Telegram notification...');
-        const telegramMessage = `*${subject}*\n${message}`;
-        const telegramSent = await sendTelegramNotification(telegramMessage);
+        // Convert the message to include markdown links for tickets
+        const telegramMessage = message.replace(
+            /^- (.*?)\n  (https:\/\/.*?)$/gm,
+            '- [$1]($2)'
+        );
+        const formattedTelegramMessage = `*${subject}*\n${telegramMessage}`;
+        const telegramSent = await sendTelegramNotification(formattedTelegramMessage);
         console.log('Telegram notification result:', telegramSent);
 
         return true;
@@ -238,51 +243,82 @@ app.get('/', async (req, res) => {
     });
 });
 
-app.post('/scan', async (req, res) => {
+app.get('/scan', async (req, res) => {
+    console.log('\n=== MANUAL SCAN STARTED ===');
     try {
+        console.log('Fetching Zendesk views...');
         const viewResults = await checkZendeskViews();
         if (!viewResults) {
-            return res.status(500).json({ error: 'Failed to scan views' });
+            console.error('Failed to fetch Zendesk views');
+            return res.status(500).json({ success: false, error: 'Failed to fetch Zendesk views' });
         }
         
-        let notificationsSent = false;
-        
-        // Check conditions and send notifications if needed
-        for (const view of viewResults) {
-            console.log(`Manual scan - Checking view "${view.viewName}":`, {
-                ticketCount: view.ticketCount,
-                hasOfficeDown: view.hasOfficeDown
-            });
+        console.log(`Found ${viewResults.length} views`);
+        const viewCounts = {};
+        let hasOfficeDown = false;
+        let officeDownTickets = [];
 
-            if (view.ticketCount >= 35) {  // Changed back to 35
-                console.log('High ticket volume detected, sending notifications...');
-                const emailSent = await sendNotification(
-                    `Zendesk Queue Alert: High Ticket Volume in ${view.viewName}`,
-                    `Alert: The view "${view.viewName}" currently has ${view.ticketCount} tickets.`
-                );
-                if (emailSent) notificationsSent = true;
+        for (const view of viewResults) {
+            console.log(`\nChecking view: ${view.viewName}`);
+            viewCounts[view.viewName] = view.ticketCount;
+            console.log(`Count for ${view.viewName}: ${view.ticketCount}`);
+
+            if (view.ticketCount >= 35) {
+                console.log(`⚠️ High volume alert: ${view.viewName} has ${view.ticketCount} tickets`);
             }
 
             if (view.hasOfficeDown) {
-                console.log('Office down ticket detected, sending notifications...');
-                const emailSent = await sendNotification(
-                    `Zendesk Queue Alert: Office Down Ticket Detected in ${view.viewName}`,
-                    `Alert: A ticket with "Is Your Office Down?" field checked has been detected in view "${view.viewName}".`
-                );
-                if (emailSent) notificationsSent = true;
+                console.log(`⚠️ Office Down found in view ${view.viewName}`);
+                hasOfficeDown = true;
+                officeDownTickets.push(...view.officeDownTickets.map(ticket => ({
+                    ...ticket,
+                    url: `https://libtax.zendesk.com/agent/tickets/${ticket.id}`
+                })));
             }
         }
-        
-        res.json({
-            viewResults,
-            lastChecked: new Date().toISOString(),
-            message: 'Scan completed successfully',
-            notificationsSent
-        });
+
+        console.log('\n=== SCAN RESULTS ===');
+        console.log('View Counts:', viewCounts);
+        console.log('Has Office Down:', hasOfficeDown);
+        if (officeDownTickets.length > 0) {
+            console.log('Office Down Tickets:', officeDownTickets);
+        }
+
+        // Check for high volume
+        const highVolumeViews = Object.entries(viewCounts)
+            .filter(([_, count]) => count >= 35)
+            .map(([name, count]) => ({ name, count }));
+
+        if (highVolumeViews.length > 0 || hasOfficeDown) {
+            console.log('\n=== SENDING NOTIFICATIONS ===');
+            let message = '';
+            
+            if (highVolumeViews.length > 0) {
+                message += 'High volume alert:\n';
+                highVolumeViews.forEach(({ name, count }) => {
+                    message += `- ${name}: ${count} tickets\n`;
+                });
+            }
+            
+            if (hasOfficeDown) {
+                message += '\nOffice Down Alert:\n';
+                officeDownTickets.forEach(ticket => {
+                    message += `- ${ticket.subject}\n  ${ticket.url}\n`;
+                });
+            }
+
+            console.log('Sending notifications with message:', message);
+            await sendNotification('LTS Queue Alert', message);
+        } else {
+            console.log('No alerts to send - all views under threshold and no office down tickets');
+        }
+
+        res.json({ success: true, viewCounts, hasOfficeDown, officeDownTickets });
     } catch (error) {
-        console.error('Error in scan route:', error);
-        res.status(500).json({ error: 'Internal server error during scan' });
+        console.error('Error during manual scan:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
+    console.log('=== MANUAL SCAN COMPLETED ===\n');
 });
 
 app.get('/api/status', async (req, res) => {
@@ -296,8 +332,11 @@ app.get('/api/status', async (req, res) => {
 // Add test route for Telegram
 app.get('/test-telegram', async (req, res) => {
     try {
-        const testMessage = '*Test Notification*\nThis is a test message from your Zendesk Queue Notifier.';
-        const success = await sendTelegramNotification(testMessage);
+        const testMessage = '*Test Notification*\n' +
+            'Testing ticket link format:\n' +
+            '- Test Office Down Ticket\n' +
+            '  https://libtax.zendesk.com/agent/tickets/615595';
+        const success = await sendNotification('Test Alert', testMessage);
         
         if (success) {
             res.json({ success: true, message: 'Test notification sent successfully' });
