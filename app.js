@@ -277,7 +277,7 @@ app.get('/scan', async (req, res) => {
                 hasOfficeDown = true;
                 officeDownTickets.push(...view.officeDownTickets.map(ticket => ({
                     ...ticket,
-                    url: `https://libtax.zendesk.com/agent/tickets/${ticket.id}`
+                    url: `https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/agent/tickets/${ticket.id}`
                 })));
             }
         }
@@ -308,7 +308,7 @@ app.get('/scan', async (req, res) => {
             if (hasOfficeDown) {
                 message += '\nOffice Down Alert:\n';
                 officeDownTickets.forEach(ticket => {
-                    message += `- ${ticket.subject}\n  https://libtax.zendesk.com/agent/tickets/${ticket.id}\n`;
+                    message += `- ${ticket.subject}\n  https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/agent/tickets/${ticket.id}\n`;
                 });
             }
 
@@ -350,7 +350,7 @@ app.get('/test-telegram', async (req, res) => {
     try {
         const testMessage = 'Testing ticket link format:\n' +
             '- Test Office Down Ticket\n' +
-            '  https://libtax.zendesk.com/agent/tickets/615595';
+            `  https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/agent/tickets/615595`;
         const success = await sendNotification('Test Alert', testMessage);
         
         if (success) {
