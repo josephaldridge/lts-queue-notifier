@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financial Products Support Queue Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-card {
+            transition: all 0.3s ease;
+        }
+        .status-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .alert {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        .view-card {
+            margin-bottom: 1rem;
+        }
+        #scanButton {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        #scanButton:hover {
+            background-color: #0b5ed7;
+        }
+        .scanning {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .nav-tabs {
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <h1 class="text-center mb-4">Queue Monitor</h1>
+        
+        <ul class="nav nav-tabs justify-content-center">
+            <li class="nav-item">
+                <a class="nav-link" href="/">Technical Support</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="/financial">Financial Products Support</a>
+            </li>
+        </ul>
+
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div class="card status-card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Financial Products Support Status</h5>
+                        <p class="text-muted">Last checked: <span id="lastChecked"><%= lastChecked %></span></p>
+                        
+                        <div id="viewResults">
+                            <% if (viewResults) { %>
+                                <% viewResults.forEach(view => { %>
+                                    <div class="card view-card">
+                                        <div class="card-body">
+                                            <h6 class="card-subtitle mb-2 text-muted">View: <%= view.viewName %></h6>
+                                            
+                                            <div class="mb-3">
+                                                <h6>Ticket Count: 
+                                                    <span class="badge <%= view.ticketCount >= 11 ? 'bg-danger' : 'bg-success' %>">
+                                                        <%= view.ticketCount %>
+                                                    </span>
+                                                </h6>
+                                                <a href="https://<%= process.env.ZENDESK_SUBDOMAIN %>.zendesk.com/agent/filters/<%= view.viewId %>" target="_blank" class="text-decoration-none">
+                                                    <small class="text-muted">View in Zendesk <i class="fas fa-external-link-alt"></i></small>
+                                                </a>
+                                                <% if (view.ticketCount >= 11) { %>
+                                                    <div class="alert alert-danger">
+                                                        High ticket volume detected! Email notification sent.
+                                                    </div>
+                                                <% } %>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <% }); %>
+                            <% } else { %>
+                                <div class="alert alert-warning">
+                                    Unable to fetch view status. Please check your configuration.
+                                </div>
+                            <% } %>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">About</h5>
+                        <p class="card-text">
+                            This monitor checks your specified Zendesk views every 5 minutes and sends email notifications when:
+                        </p>
+                        <ul>
+                            <li>A view has 11 or more tickets</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button id="scanButton" title="Scan Now">
+        <i class="fas fa-sync-alt"></i>
+    </button>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const scanButton = document.getElementById('scanButton');
+        const lastChecked = document.getElementById('lastChecked');
+        const viewResults = document.getElementById('viewResults');
+
+        async function scanNow() {
+            try {
+                scanButton.classList.add('scanning');
+                const response = await fetch('/scan/financial', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to scan views');
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    lastChecked.textContent = new Date(data.timestamp).toLocaleString();
+                    // Refresh the page to show updated results
+                    window.location.reload();
+                } else {
+                    throw new Error(data.error || 'Scan failed');
+                }
+            } catch (error) {
+                console.error('Scan error:', error);
+                alert('Error scanning views: ' + error.message);
+            } finally {
+                scanButton.classList.remove('scanning');
+            }
+        }
+
+        scanButton.addEventListener('click', scanNow);
+
+        // Auto-refresh the page every minute
+        setTimeout(() => {
+            window.location.reload();
+        }, 60000);
+    </script>
+</body>
+</html> 

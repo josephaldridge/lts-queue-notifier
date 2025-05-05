@@ -47,6 +47,10 @@ transporter.verify(function(error, success) {
 const TELEGRAM_BOT_TOKEN = '7260610988:AAEesoIcYxxde7QSH4-kb4FHuL5TBq51Hx4';
 const TELEGRAM_CHAT_ID = '-4748043895';
 
+// Financial Products Telegram configuration
+const FINANCIAL_TELEGRAM_BOT_TOKEN = process.env.FINANCIAL_TELEGRAM_BOT_TOKEN;
+const FINANCIAL_TELEGRAM_CHAT_ID = process.env.FINANCIAL_TELEGRAM_CHAT_ID;
+
 // Zendesk API configuration
 const zendeskConfig = {
     subdomain: process.env.ZENDESK_SUBDOMAIN,
@@ -54,6 +58,10 @@ const zendeskConfig = {
     token: process.env.ZENDESK_API_TOKEN,
     viewIds: process.env.ZENDESK_VIEW_IDS ? process.env.ZENDESK_VIEW_IDS.split(',') : []
 };
+
+// Financial Products Support views (now from .env)
+const FINANCIAL_VIEW_IDS = process.env.FINANCIAL_VIEW_IDS ? process.env.FINANCIAL_VIEW_IDS.split(',') : [];
+const FINANCIAL_VIEWS = FINANCIAL_VIEW_IDS.map(id => ({ id: id.trim(), name: `View ${id.trim()}` }));
 
 // Function to check Zendesk views
 async function checkZendeskViews() {
@@ -129,19 +137,19 @@ async function checkZendeskViews() {
     }
 }
 
-// Function to send Telegram notification
-async function sendTelegramNotification(message) {
+// Function to send Telegram notification (generic, accepts bot token and chat id)
+async function sendTelegramNotification(message, botToken = TELEGRAM_BOT_TOKEN, chatId = TELEGRAM_CHAT_ID) {
     try {
-        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
         console.log('\n=== TELEGRAM NOTIFICATION ATTEMPT ===');
         console.log('URL:', url);
-        console.log('Chat ID:', TELEGRAM_CHAT_ID);
+        console.log('Chat ID:', chatId);
         console.log('Message:', message);
-        console.log('Token length:', TELEGRAM_BOT_TOKEN.length);
+        console.log('Token length:', botToken.length);
         console.log('=====================================\n');
         
         const response = await axios.post(url, {
-            chat_id: TELEGRAM_CHAT_ID,
+            chat_id: chatId,
             text: message,
             parse_mode: 'Markdown'
         });
@@ -363,6 +371,130 @@ app.get('/test-telegram', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// Add new route for Financial Products Support page
+app.get('/financial', async (req, res) => {
+    try {
+        const viewResults = await checkFinancialViews();
+        res.render('financial', { 
+            viewResults,
+            lastChecked: new Date().toLocaleString(),
+            process: process
+        });
+    } catch (error) {
+        console.error('Error rendering financial page:', error);
+        res.status(500).send('Error loading page');
+    }
+});
+
+// Add new scan route for Financial Products Support
+app.get('/scan/financial', async (req, res) => {
+    try {
+        const viewResults = await checkFinancialViews();
+        res.json({ 
+            success: true, 
+            viewResults,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error scanning financial views:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Function to check Financial Products Support views
+async function checkFinancialViews() {
+    const results = [];
+    
+    for (const view of FINANCIAL_VIEWS) {
+        try {
+            const response = await axios.get(
+                `https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2/views/${view.id}/tickets.json`,
+                {
+                    auth: {
+                        username: `${process.env.ZENDESK_EMAIL}/token`,
+                        password: process.env.ZENDESK_API_TOKEN
+                    }
+                }
+            );
+
+            const ticketCount = response.data.tickets.length;
+
+            // Try to get the view name from the API if not set
+            let viewName = view.name;
+            try {
+                const viewDetails = await axios.get(
+                    `https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2/views/${view.id}.json`,
+                    {
+                        auth: {
+                            username: `${process.env.ZENDESK_EMAIL}/token`,
+                            password: process.env.ZENDESK_API_TOKEN
+                        }
+                    }
+                );
+                viewName = viewDetails.data.view.title;
+            } catch (e) {
+                // fallback to default name
+            }
+
+            results.push({
+                viewId: view.id,
+                viewName: viewName,
+                ticketCount: ticketCount
+            });
+
+            // Send notification if ticket count is 11 or more
+            if (ticketCount >= 11) {
+                const subject = `High Ticket Volume Alert - ${viewName}`;
+                const message = `The ${viewName} queue currently has ${ticketCount} tickets. Please check the queue at https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/agent/filters/${view.id}`;
+                
+                // Send email notification
+                await sendEmailNotification(
+                    'Laniann.walker@libtax.com',
+                    subject,
+                    message
+                );
+                // Send Telegram notification using the Financial Products bot
+                await sendTelegramNotification(`*${subject}*\n${message}`, FINANCIAL_TELEGRAM_BOT_TOKEN, FINANCIAL_TELEGRAM_CHAT_ID);
+            }
+        } catch (error) {
+            console.error(`Error checking view ${view.id}:`, error);
+            results.push({
+                viewId: view.id,
+                viewName: view.name,
+                error: error.message
+            });
+        }
+    }
+    
+    return results;
+}
+
+// Function to send email notifications
+async function sendEmailNotification(to, subject, message) {
+    try {
+        const mailOptions = {
+            from: process.env.SMTP_USERNAME,
+            to: to,
+            subject: subject,
+            text: message,
+            html: `<p>${message.replace(/\n/g, '<br>')}</p>`
+        };
+
+        const emailInfo = await transporter.sendMail(mailOptions);
+        console.log(`Email notification sent to ${to}:`, {
+            messageId: emailInfo.messageId,
+            response: emailInfo.response
+        });
+    } catch (error) {
+        console.error('Error sending email notification:', error);
+    }
+}
 
 // Start server
 app.listen(port, () => {
