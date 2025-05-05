@@ -251,7 +251,11 @@ app.get('/scan', async (req, res) => {
         const viewResults = await checkZendeskViews();
         if (!viewResults) {
             console.error('Failed to fetch Zendesk views');
-            return res.status(500).json({ success: false, error: 'Failed to fetch Zendesk views' });
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to fetch Zendesk views',
+                details: 'The checkZendeskViews function returned null'
+            });
         }
         
         console.log(`Found ${viewResults.length} views`);
@@ -314,10 +318,21 @@ app.get('/scan', async (req, res) => {
             console.log('No alerts to send - all views under threshold and no office down tickets');
         }
 
-        res.json({ success: true, viewCounts, hasOfficeDown, officeDownTickets });
+        res.json({ 
+            success: true, 
+            viewCounts, 
+            hasOfficeDown, 
+            officeDownTickets,
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
         console.error('Error during manual scan:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
     }
     console.log('=== MANUAL SCAN COMPLETED ===\n');
 });

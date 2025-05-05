@@ -151,21 +151,27 @@
             try {
                 scanButton.classList.add('scanning');
                 const response = await fetch('/scan', {
-                    method: 'POST',
+                    method: 'GET',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Accept': 'application/json'
                     }
                 });
                 
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to scan views');
+                }
+                
                 const data = await response.json();
-                if (response.ok) {
-                    lastChecked.textContent = new Date(data.lastChecked).toLocaleString();
+                if (data.success) {
+                    lastChecked.textContent = new Date(data.timestamp).toLocaleString();
                     // Refresh the page to show updated results
                     window.location.reload();
                 } else {
-                    alert('Error scanning views: ' + data.error);
+                    throw new Error(data.error || 'Scan failed');
                 }
             } catch (error) {
+                console.error('Scan error:', error);
                 alert('Error scanning views: ' + error.message);
             } finally {
                 scanButton.classList.remove('scanning');
