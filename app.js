@@ -189,6 +189,7 @@ async function sendNotification(subject, message) {
             /^- (.*?)\n  (https:\/\/.*?)$/gm,
             '- [$1]($2)'
         );
+        console.log('Formatted Telegram message:', telegramMessage);
         const formattedTelegramMessage = `*${subject}*\n${telegramMessage}`;
         const telegramSent = await sendTelegramNotification(formattedTelegramMessage);
         console.log('Telegram notification result:', telegramSent);
@@ -303,7 +304,7 @@ app.get('/scan', async (req, res) => {
             if (hasOfficeDown) {
                 message += '\nOffice Down Alert:\n';
                 officeDownTickets.forEach(ticket => {
-                    message += `- ${ticket.subject}\n  ${ticket.url}\n`;
+                    message += `- ${ticket.subject}\n  https://libtax.zendesk.com/agent/tickets/${ticket.id}\n`;
                 });
             }
 
@@ -332,8 +333,7 @@ app.get('/api/status', async (req, res) => {
 // Add test route for Telegram
 app.get('/test-telegram', async (req, res) => {
     try {
-        const testMessage = '*Test Notification*\n' +
-            'Testing ticket link format:\n' +
+        const testMessage = 'Testing ticket link format:\n' +
             '- Test Office Down Ticket\n' +
             '  https://libtax.zendesk.com/agent/tickets/615595';
         const success = await sendNotification('Test Alert', testMessage);
