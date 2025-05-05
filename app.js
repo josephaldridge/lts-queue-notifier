@@ -63,6 +63,15 @@ const zendeskConfig = {
 const FINANCIAL_VIEW_IDS = process.env.FINANCIAL_VIEW_IDS ? process.env.FINANCIAL_VIEW_IDS.split(',') : [];
 const FINANCIAL_VIEWS = FINANCIAL_VIEW_IDS.map(id => ({ id: id.trim(), name: `View ${id.trim()}` }));
 
+// Tax Support Department views (from .env)
+const TAXSUPPORT_VIEW_IDS = process.env.TAXSUPPORT_VIEW_IDS ? process.env.TAXSUPPORT_VIEW_IDS.split(',') : [];
+const TAXSUPPORT_VIEWS = [
+    { id: '360192271734', name: 'US Tax Support Center Questions' },
+    { id: '27597458029079', name: 'US Tax Support Center Torch Status' },
+    { id: '16327472919959', name: 'US Tax Support Center Preparation' },
+    { id: '16327435163287', name: 'US Tax Support Center Review' }
+];
+
 // Function to check Zendesk views
 async function checkZendeskViews() {
     try {
@@ -246,9 +255,10 @@ cron.schedule('*/5 14-23 * * *', async () => {
 // Routes
 app.get('/', async (req, res) => {
     const viewResults = await checkZendeskViews();
-    res.render('index', { 
+    res.render('index', {
         viewResults,
-        lastChecked: new Date().toLocaleString()
+        lastChecked: new Date().toLocaleString(),
+        activeTab: 'technical'
     });
 });
 
@@ -376,10 +386,11 @@ app.get('/test-telegram', async (req, res) => {
 app.get('/financial', async (req, res) => {
     try {
         const viewResults = await checkFinancialViews();
-        res.render('financial', { 
+        res.render('financial', {
             viewResults,
             lastChecked: new Date().toLocaleString(),
-            process: process
+            process: process,
+            activeTab: 'financial'
         });
     } catch (error) {
         console.error('Error rendering financial page:', error);
@@ -495,6 +506,98 @@ async function sendEmailNotification(to, subject, message) {
         console.error('Error sending email notification:', error);
     }
 }
+
+// Function to check Tax Support views
+async function checkTaxSupportViews() {
+    const results = [];
+    for (const view of TAXSUPPORT_VIEWS) {
+        try {
+            const response = await axios.get(
+                `https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2/views/${view.id}/tickets.json`,
+                {
+                    auth: {
+                        username: `${process.env.ZENDESK_EMAIL}/token`,
+                        password: process.env.ZENDESK_API_TOKEN
+                    }
+                }
+            );
+            const ticketCount = response.data.tickets.length;
+            let viewName = view.name;
+            try {
+                const viewDetails = await axios.get(
+                    `https://${process.env.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2/views/${view.id}.json`,
+                    {
+                        auth: {
+                            username: `${process.env.ZENDESK_EMAIL}/token`,
+                            password: process.env.ZENDESK_API_TOKEN
+                        }
+                    }
+                );
+                viewName = viewDetails.data.view.title;
+            } catch (e) {}
+            results.push({
+                viewId: view.id,
+                viewName: viewName,
+                ticketCount: ticketCount
+            });
+            // Placeholder notification logic
+            if (ticketCount >= 100) {
+                console.log(`[Tax Support] High ticket volume in ${viewName} (${ticketCount} tickets). Placeholder notification to michelle.frazier@libtax.com.`);
+                // Placeholder: implement notification logic here in the future
+            }
+        } catch (error) {
+            console.error(`[Tax Support] Error checking view ${view.id}:`, error);
+            results.push({
+                viewId: view.id,
+                viewName: view.name,
+                error: error.message
+            });
+        }
+    }
+    return results;
+}
+
+// Tax Support page route
+app.get('/taxsupport', async (req, res) => {
+    try {
+        const viewResults = await checkTaxSupportViews();
+        res.render('taxsupport', {
+            viewResults,
+            lastChecked: new Date().toLocaleString(),
+            process: process,
+            activeTab: 'taxsupport'
+        });
+    } catch (error) {
+        console.error('Error rendering taxsupport page:', error);
+        res.status(500).send('Error loading page');
+    }
+});
+
+// Tax Support scan route
+app.get('/scan/taxsupport', async (req, res) => {
+    try {
+        const viewResults = await checkTaxSupportViews();
+        res.json({
+            success: true,
+            viewResults,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error scanning taxsupport views:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Schedule Tax Support check every 30 minutes
+cron.schedule('*/30 * * * *', async () => {
+    console.log('[Tax Support] Running scheduled check...');
+    await checkTaxSupportViews();
+});
 
 // Start server
 app.listen(port, () => {
