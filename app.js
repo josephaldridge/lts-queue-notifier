@@ -43,6 +43,10 @@ transporter.verify(function(error, success) {
     }
 });
 
+// Telegram configuration
+const TELEGRAM_BOT_TOKEN = '7260610988:AAEesoIcYxxde7QSH4-kb4FHuL5TBq51Hx4';
+const TELEGRAM_CHAT_ID = '-4748043895';
+
 // Zendesk API configuration
 const zendeskConfig = {
     subdomain: process.env.ZENDESK_SUBDOMAIN,
@@ -125,33 +129,68 @@ async function checkZendeskViews() {
     }
 }
 
-// Function to send email notification
-async function sendNotification(subject, message) {
+// Function to send Telegram notification
+async function sendTelegramNotification(message) {
     try {
-        console.log('Attempting to send email notification...');
-        console.log('Email details:', {
-            from: process.env.SMTP_USERNAME,
-            to: process.env.NOTIFICATION_EMAIL,
-            subject: subject,
-            message: message
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        console.log('\n=== TELEGRAM NOTIFICATION ATTEMPT ===');
+        console.log('URL:', url);
+        console.log('Chat ID:', TELEGRAM_CHAT_ID);
+        console.log('Message:', message);
+        console.log('Token length:', TELEGRAM_BOT_TOKEN.length);
+        console.log('=====================================\n');
+        
+        const response = await axios.post(url, {
+            chat_id: TELEGRAM_CHAT_ID,
+            text: message,
+            parse_mode: 'Markdown'
         });
         
+        console.log('\n=== TELEGRAM API RESPONSE ===');
+        console.log(JSON.stringify(response.data, null, 2));
+        console.log('=============================\n');
+        return true;
+    } catch (error) {
+        console.error('\n=== TELEGRAM ERROR ===');
+        console.error('Error message:', error.message);
+        if (error.response) {
+            console.error('Response data:', error.response.data);
+            console.error('Status code:', error.response.status);
+        }
+        console.error('========================\n');
+        return false;
+    }
+}
+
+// Function to send notification (modified to include Telegram)
+async function sendNotification(subject, message) {
+    try {
+        console.log('Attempting to send notifications...');
+        
+        // Send email notification
         const mailOptions = {
             from: process.env.SMTP_USERNAME,
             to: process.env.NOTIFICATION_EMAIL,
             subject: subject,
             text: message,
-            html: `<p>${message.replace(/\n/g, '<br>')}</p>` // Add HTML version for better formatting
+            html: `<p>${message.replace(/\n/g, '<br>')}</p>`
         };
 
-        const info = await transporter.sendMail(mailOptions);
+        const emailInfo = await transporter.sendMail(mailOptions);
         console.log('Email notification sent successfully:', {
-            messageId: info.messageId,
-            response: info.response
+            messageId: emailInfo.messageId,
+            response: emailInfo.response
         });
+
+        // Send Telegram notification
+        console.log('Preparing to send Telegram notification...');
+        const telegramMessage = `*${subject}*\n${message}`;
+        const telegramSent = await sendTelegramNotification(telegramMessage);
+        console.log('Telegram notification result:', telegramSent);
+
         return true;
     } catch (error) {
-        console.error('Error sending email notification:', {
+        console.error('Error sending notifications:', {
             error: error.message,
             stack: error.stack,
             code: error.code
@@ -167,7 +206,13 @@ cron.schedule('*/5 14-23 * * *', async () => {
     if (!viewResults) return;
 
     for (const view of viewResults) {
-        if (view.ticketCount >= 35) {
+        console.log(`Checking view "${view.viewName}":`, {
+            ticketCount: view.ticketCount,
+            hasOfficeDown: view.hasOfficeDown
+        });
+
+        if (view.ticketCount >= 35) {  // Changed back to 35
+            console.log('High ticket volume detected, sending notifications...');
             await sendNotification(
                 `Zendesk Queue Alert: High Ticket Volume in ${view.viewName}`,
                 `Alert: The view "${view.viewName}" currently has ${view.ticketCount} tickets.`
@@ -175,6 +220,7 @@ cron.schedule('*/5 14-23 * * *', async () => {
         }
 
         if (view.hasOfficeDown) {
+            console.log('Office down ticket detected, sending notifications...');
             await sendNotification(
                 `Zendesk Queue Alert: Office Down Ticket Detected in ${view.viewName}`,
                 `Alert: A ticket with "Is Your Office Down?" field checked has been detected in view "${view.viewName}".`
@@ -203,7 +249,13 @@ app.post('/scan', async (req, res) => {
         
         // Check conditions and send notifications if needed
         for (const view of viewResults) {
-            if (view.ticketCount >= 35) {
+            console.log(`Manual scan - Checking view "${view.viewName}":`, {
+                ticketCount: view.ticketCount,
+                hasOfficeDown: view.hasOfficeDown
+            });
+
+            if (view.ticketCount >= 35) {  // Changed back to 35
+                console.log('High ticket volume detected, sending notifications...');
                 const emailSent = await sendNotification(
                     `Zendesk Queue Alert: High Ticket Volume in ${view.viewName}`,
                     `Alert: The view "${view.viewName}" currently has ${view.ticketCount} tickets.`
@@ -212,6 +264,7 @@ app.post('/scan', async (req, res) => {
             }
 
             if (view.hasOfficeDown) {
+                console.log('Office down ticket detected, sending notifications...');
                 const emailSent = await sendNotification(
                     `Zendesk Queue Alert: Office Down Ticket Detected in ${view.viewName}`,
                     `Alert: A ticket with "Is Your Office Down?" field checked has been detected in view "${view.viewName}".`
@@ -238,6 +291,23 @@ app.get('/api/status', async (req, res) => {
         viewResults,
         lastChecked: new Date().toISOString()
     });
+});
+
+// Add test route for Telegram
+app.get('/test-telegram', async (req, res) => {
+    try {
+        const testMessage = '*Test Notification*\nThis is a test message from your Zendesk Queue Notifier.';
+        const success = await sendTelegramNotification(testMessage);
+        
+        if (success) {
+            res.json({ success: true, message: 'Test notification sent successfully' });
+        } else {
+            res.status(500).json({ success: false, message: 'Failed to send test notification' });
+        }
+    } catch (error) {
+        console.error('Error in test-telegram route:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // Start server

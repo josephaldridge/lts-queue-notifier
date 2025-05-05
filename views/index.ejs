@@ -74,11 +74,14 @@
                                             
                                             <div class="mb-3">
                                                 <h6>Ticket Count: 
-                                                    <span class="badge <%= view.ticketCount >= 5 ? 'bg-danger' : 'bg-success' %>">
+                                                    <span class="badge <%= view.ticketCount >= 35 ? 'bg-danger' : 'bg-success' %>">
                                                         <%= view.ticketCount %>
                                                     </span>
                                                 </h6>
-                                                <% if (view.ticketCount >= 5) { %>
+                                                <a href="https://<%= process.env.ZENDESK_SUBDOMAIN %>.zendesk.com/agent/filters/<%= view.viewId %>" target="_blank" class="text-decoration-none">
+                                                    <small class="text-muted">View in Zendesk <i class="fas fa-external-link-alt"></i></small>
+                                                </a>
+                                                <% if (view.ticketCount >= 35) { %>
                                                     <div class="alert alert-danger">
                                                         High ticket volume detected! Email notification sent.
                                                     </div>
@@ -125,7 +128,7 @@
                             This monitor checks your specified Zendesk views every 5 minutes and sends email notifications when:
                         </p>
                         <ul>
-                            <li>A view has 5 or more tickets</li>
+                            <li>A view has 35 or more tickets</li>
                             <li>A ticket with "Is Your Office Down?" field checked is detected in any view</li>
                         </ul>
                     </div>
